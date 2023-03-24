@@ -6,6 +6,9 @@ rm(list = ls())
 # Bibliotecas ----
 # library(readxl)
 library(tidyverse)
+library(caret)
+library(rpart)
+library(randomForest)
 
 # Dados ----
 # base <- readxl::read_xlsx("enem.xlsx") 
@@ -79,7 +82,7 @@ missing_check_trat(NOTA_REDACAO_TRAT, TP_PRESENCA_LC)
 missing_check_trat(NOTA_MT_TRAT, TP_PRESENCA_LC)
 
 
-## Criar o modelo de predição de nota
+# Criar o modelo de predição de nota ----
 
 full_model <- lm(NOTA_MT_TRAT ~ ., data = base_trat %>% select(starts_with("NOTA"), 
                                                                NU_IDADE, 
@@ -95,20 +98,112 @@ full_model <- lm(NOTA_MT_TRAT ~ ., data = base_trat)
 lin_model <- lm(NOTA_MT_TRAT ~ NOTA_CN_TRAT + NOTA_CH_TRAT + NOTA_LC_TRAT + NOTA_REDACAO_TRAT, 
                 data = base_trat) # duvida >> aqui não dá certo colocar TP_ST_CONCLUSAO, é pq tem NA?
 
+zero_model <- lm(NOTA_MT_TRAT ~ 1, data = base_trat)
+
+back_model <- step(full_model, scope = formula(full_model), direction = 'backward')
+
 summary(lin_model) # tem 91% de variância explicada
 summary(full_model)
+summary(back_model)
 
-pred <- predict(lin_model, base_trat)
+base_validacao <- base_trat %>% 
+  select(TP_PRESENCA_LC, NOTA_MT_TRAT) %>% 
+  mutate(pred_lin = ifelse(TP_PRESENCA_LC %in% c(0, 2), 0, predict(lin_model, base_trat)),
+         pred_full = ifelse(TP_PRESENCA_LC %in% c(0, 2), 0, predict(full_model, base_trat)),
+         pred_back = ifelse(TP_PRESENCA_LC %in% c(0, 2), 0, predict(back_model, base_trat))
+         )
+
+
+ggplot(base_validacao) +
+  aes(x = NOTA_MT_TRAT) +
+  # geom_point(aes(y = pred_lin)) +
+  # geom_point(aes(y = pred_full)) +
+  geom_point(aes(y = pred_back), alpha = 0.1) +
+  geom_abline(intercept = 0, slope = 1, color = 'red') +
+  scale_x_continuous(limits = c(0, 1000)) +
+  scale_y_continuous(limits = c(0, 1000)) +
+  theme(panel.background = element_rect(fill = 'white', color = 'grey'),
+        panel.grid = element_blank())
+
+base_validacao %>% 
+  filter(TP_PRESENCA_LC == 1,
+         NOTA_MT_TRAT == 0)
+
+
+RMSE(base_validacao$NOTA_MT_TRAT, base_validacao$pred_full, na.rm = T)
+RMSE(base_validacao$NOTA_MT_TRAT, base_validacao$pred_back, na.rm = T)
+RMSE(base_validacao$NOTA_MT_TRAT, base_validacao$pred_lin, na.rm = T)
+
+
+# Bases de treino e teste ----
+base_completa <- base_trat %>% 
+  filter(!is.na(NOTA_MT_TRAT))
+
+base_na <- base_trat %>% 
+  filter(is.na(NOTA_MT_TRAT))
+
+set.seed(1)
+index <- createDataPartition(base_completa$NOTA_MT_TRAT, p = 0.7, list = F)
+
+treino <- base_completa[index, ]
+teste <- base_completa[-index, ]
+
+# Outros modelos ----
+full_model <- lm(NOTA_MT_TRAT ~ ., data = treino)
+lin_model <- lm(NOTA_MT_TRAT ~ NOTA_CN_TRAT + NOTA_CH_TRAT + NOTA_LC_TRAT + NOTA_REDACAO_TRAT, 
+                data = treino) 
+
+tree_model <- rpart(NOTA_MT_TRAT ~ ., data = treino)
+rf_model <- randomForest(NOTA_MT_TRAT ~ ., data = treino)
+
+
+
+validacao <- teste %>% 
+  select(TP_PRESENCA_LC, NOTA_MT_TRAT) %>% 
+  mutate(pred_lin = ifelse(TP_PRESENCA_LC %in% c(0, 2), 0, predict(lin_model, teste)),
+         pred_full = ifelse(TP_PRESENCA_LC %in% c(0, 2), 0, predict(full_model, teste)),
+         pred_tree = ifelse(TP_PRESENCA_LC %in% c(0, 2), 0, predict(tree_model, teste)),
+         pred_rf = ifelse(TP_PRESENCA_LC %in% c(0, 2), 0, predict(rf_model, teste))
+         )
+
+ggplot(validacao) +
+  aes(x = NOTA_MT_TRAT) +
+  # geom_point(aes(y = pred_lin), alpha = 0.2) +
+  # geom_point(aes(y = pred_full), alpha = 0.2) +
+  # geom_point(aes(y = pred_tree), alpha = 0.2) +
+  geom_point(aes(y = pred_rf), alpha = 0.2) +
+  geom_abline(intercept = 0, slope = 1, color = 'red') +
+  scale_x_continuous(limits = c(0, 1000)) +
+  scale_y_continuous(limits = c(0, 1000)) +
+  labs(x = 'Nota real',
+       y = 'Nota predita') +
+  theme(panel.background = element_rect(fill = 'white', color = 'grey'),
+        panel.grid = element_blank())
+
+
+RMSE(validacao$NOTA_MT_TRAT, validacao$pred_full, na.rm = T)
+RMSE(validacao$NOTA_MT_TRAT, validacao$pred_lin, na.rm = T)
+RMSE(validacao$NOTA_MT_TRAT, validacao$pred_tree, na.rm = T)
+RMSE(validacao$NOTA_MT_TRAT, validacao$pred_rf, na.rm = T)
+
 
 ##Base final
-base_final <- base_trat %>% 
-  mutate(nota_mt_pred = pred, 
-         nota_final_mt = ifelse(is.na(NOTA_MT_TRAT), nota_mt_pred, NOTA_MT_TRAT))
+base_final <- base_na %>% 
+  mutate(nota_final_mt = ifelse(TP_PRESENCA_LC %in% c(0, 2), 0, predict(rf_model, base_na)))
 
-##duvida >> porque deu errado eu colocar c(O,2)?
-base_trat_errada <- base %>% 
-  mutate(NOTA_CN_TRAT = ifelse(is.na(NU_NOTA_CN)&TP_PRESENCA_CN == c(0,2), "0", NU_NOTA_CN))
 
-summary(base_trat)
-base_trat %>% group_by(TP_STATUS_REDACAO) %>% count()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

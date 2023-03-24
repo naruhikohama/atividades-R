@@ -154,8 +154,11 @@ enem_predito <- enem_na %>%
   create_pred('NU_NOTA_MT', pred, TP_PRESENCA_LC)
 
 
-
-
+summary(enem_completo)
+enem_completo %>% 
+  group_by(TP_ST_CONCLUSAO) %>% 
+  sample_frac(0.1) %>% 
+  summary()
 
 
 
