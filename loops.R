@@ -1,5 +1,5 @@
 # Ambiente ----
-setwd("C:/Users/Naruhiko/OneDrive/Documentos/Programação/atividades-R")
+setwd("atividades-R/")
 rm(list = ls())
 
 # Bibliotecas ----
