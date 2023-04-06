@@ -16,7 +16,7 @@ soma <- function(lista, na.rm = F) {
         total <- total + num
       }
     } else {
-      total <- total + num
+      next
     }
   }
   return(total)
