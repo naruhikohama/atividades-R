@@ -18,7 +18,8 @@ dft <- df %>%
   group_by(month_year) %>% 
   summarise(avg_sentence = mean(sentence_months, na.rm = T),
             qtde = n()) %>% 
-  filter(!is.na(month_year))
+  filter(!is.na(month_year),
+         month_year < as.Date('2022-03-01'))
 
 # Grafico
 ggplot(dft) +
